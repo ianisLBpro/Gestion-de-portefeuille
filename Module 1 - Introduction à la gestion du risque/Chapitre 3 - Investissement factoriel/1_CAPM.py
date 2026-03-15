@@ -25,6 +25,7 @@ import yfinance as yf
 import pandas_datareader.data as web
 import statsmodels.formula.api as smf
 
+# Ignorer les FutureWarnings liés à date_parser dans pandas_datareader car pandas a changé son API de parsing de dates 
 warnings.filterwarnings("ignore", category=FutureWarning, message=".*date_parser.*")
 
 
