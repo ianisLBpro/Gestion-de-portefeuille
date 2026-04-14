@@ -1,20 +1,26 @@
-'''
-3.1_Markowitz_Optimisation — scipy.optimize
+"""
+3bis_Portefeuille_de_Markowitz_Scipy.py
 
-Ce fichier complète le fichier 3_Portefeuille_de_Markowitz en remplaçant
-la simulation Monte Carlo par une optimisation convexe exacte via scipy.optimize.
+Auteur     : Ianis Le Berre
+Module     : Module 1 — Introduction à la gestion du risque
+             Chapitre 2 — Investir en portefeuille
+Librairies : numpy, pandas, matplotlib, yfinance, scipy
+"""
 
-Différence fondamentale :
-    Monte Carlo  : approximation par énumération de 100 000 portefeuilles aléatoires
-                   => le MSR/GMV trouvé est le meilleur des tirages, pas le vrai optimum
-    scipy.optimize : résolution analytique du problème d'optimisation
-                   => résultat exact, reproductible, et extensible avec des contraintes réelles
+# Ce fichier complète 3_Portefeuille_de_Markowitz.py en remplaçant
+# la simulation Monte Carlo par une optimisation convexe exacte via scipy.optimize.
+#
+# Différence fondamentale :
+#     Monte Carlo    : approximation par énumération de 100 000 portefeuilles aléatoires
+#                      => le MSR/GMV trouvé est le meilleur des tirages, pas le vrai optimum
+#     scipy.optimize : résolution analytique du problème d'optimisation
+#                      => résultat exact, reproductible, extensible avec des contraintes réelles
+#
+# Les deux approches doivent converger vers des résultats très proches.
+# Un écart important signalerait que 100 000 simulations étaient insuffisantes.
+#
+# Actifs utilisés : AAPL, MSFT, AMZN, JPM, JNJ | Période : 2016-2026
 
-Les deux approches doivent converger vers des résultats très proches.
-Un écart important signalerait que 100 000 simulations étaient insuffisantes.
-
-Actifs utilisés : AAPL, MSFT, AMZN, JPM, JNJ | Période : 2016-2026
-'''
 
 import numpy as np
 import pandas as pd
@@ -27,25 +33,27 @@ from scipy.optimize import minimize
 TICKERS = ["AAPL", "MSFT", "AMZN", "JPM", "JNJ"]
 NUM_STOCKS = len(TICKERS)
 START = "2016-01-01"
-END   = "2026-01-01"
+END   = "2026-12-31"
 
 # Téléchargement des données
 data = yf.download(TICKERS, start=START, end=END,
                    auto_adjust=False, progress=False)
-adj_close = data["Adj Close"].sort_index()
+if isinstance(data.columns, pd.MultiIndex):
+    adj_close = data["Adj Close"]
+adj_close = adj_close.sort_index()
 
 # Rendements journaliers
-StockReturns = adj_close.pct_change().dropna()
+stock_returns = adj_close.pct_change().dropna()
 
 # Paramètres annualisés
-mean_returns_annual = StockReturns[TICKERS].mean() * 252
-cov_mat_annual      = StockReturns[TICKERS].cov() * 252
+mean_returns_annual = stock_returns[TICKERS].mean() * 252
+cov_mat_annual      = stock_returns[TICKERS].cov() * 252
 
 # Poids des 3 portefeuilles custom (pour comparaison finale)
 portfolio_weights = np.array([0.30, 0.25, 0.20, 0.15, 0.10])
 portfolio_weights_ew   = np.repeat(1 / NUM_STOCKS, NUM_STOCKS)
 market_capitalizations = np.array([2500, 2200, 1800, 500, 400])
-mcap_weights           = market_capitalizations / sum(market_capitalizations)
+mcap_weights           = market_capitalizations / np.sum(market_capitalizations)
 
 print("Rendements annualisés moyens :")
 for t, r in zip(TICKERS, mean_returns_annual):
@@ -56,23 +64,21 @@ for t, r in zip(TICKERS, mean_returns_annual):
 
 # 1. Fonctions utilitaires
 
-'''
-Deux fonctions sont nécessaires pour l'optimisation :
-
-    portfolio_performance(weights) :
-        Calcule le rendement et la volatilité annualisés d'un portefeuille.
-            p_ret = wT · mean_returns_annual
-            p_vol = sqrt(wT · Sigma · w)
-
-    neg_sharpe(weights) :
-        Retourne le Sharpe ratio négatif.
-        scipy.optimize minimise => on minimise -Sharpe pour maximiser Sharpe.
-        rf = 0 pour simplifier (cohérent avec le fichier 3).
-
-Contraintes communes à toutes les optimisations :
-    - Somme des poids = 1       (contrainte d'égalité)
-    - Chaque poids entre 0 et 1 (pas de vente à découvert)
-'''
+# Deux fonctions sont nécessaires pour l'optimisation :
+#
+#     portfolio_performance(weights) :
+#         Calcule le rendement et la volatilité annualisés d'un portefeuille.
+#             p_ret = wᵀ · mean_returns_annual
+#             p_vol = sqrt(wᵀ · Σ · w)
+#
+#     neg_sharpe(weights) :
+#         Retourne le Sharpe ratio négatif.
+#         scipy.optimize minimise une fonction => on minimise -Sharpe pour maximiser Sharpe.
+#         rf = 0 pour simplifier (cohérent avec le fichier 3).
+#
+# Contraintes communes à toutes les optimisations :
+#     - Somme des poids = 1       (contrainte d'égalité)
+#     - Chaque poids entre 0 et 1 (pas de vente à découvert)
 
 def portfolio_performance(weights):
     # Rendement annualisé du portefeuille
@@ -101,23 +107,21 @@ w0 = np.repeat(1 / NUM_STOCKS, NUM_STOCKS)
 
 # 2. Optimisation MSR (Max Sharpe Ratio)
 
-'''
-MSR — Maximisation du Sharpe Ratio :
-
-    max  (R_p - RF) / sigma_p
-    s.t. sum(w) = 1
-         0 <= w_i <= 1
-
-scipy.optimize.minimize résout ce problème en cherchant
-le vecteur w qui minimise -Sharpe sous les contraintes données.
-
-Algorithme : SLSQP (Sequential Least Squares Programming)
-    => adapté aux problèmes avec contraintes d'égalité et de borne.
-
-    result = minimize(neg_sharpe, w0, method="SLSQP",
-                      bounds=bounds, constraints=constraints)
-    result.x => poids optimaux
-'''
+# MSR — Maximisation du Sharpe Ratio :
+#
+#     max  (R_p - rf) / sigma_p
+#     s.t. sum(w) = 1
+#          0 <= w_i <= 1
+#
+# scipy.optimize.minimize résout ce problème en cherchant
+# le vecteur w qui minimise -Sharpe sous les contraintes données.
+#
+# Algorithme : SLSQP (Sequential Least Squares Programming)
+#     => adapté aux problèmes avec contraintes d'égalité et de borne.
+#
+#     result = minimize(neg_sharpe, w0, method="SLSQP",
+#                       bounds=bounds, constraints=constraints)
+#     result.x => poids optimaux
 
 result_msr = minimize(neg_sharpe, w0,
                       method="SLSQP",
@@ -138,18 +142,16 @@ print(f"  Volatilité : {MSR_vol_opt:.4%} | Rendement : {MSR_ret_opt:.4%} | Shar
 
 # 3. Optimisation GMV (Global Minimum Volatility)
 
-'''
-GMV — Minimisation de la volatilité :
-
-    min  sqrt(wT · Sigma · w)
-    s.t. sum(w) = 1
-         0 <= w_i <= 1
-
-Ici on minimise directement la volatilité du portefeuille,
-sans contrainte sur le rendement.
-La volatilité étant plus prévisible que les rendements,
-le GMV est souvent plus robuste en pratique que le MSR.
-'''
+# GMV — Minimisation de la volatilité :
+#
+#     min  sqrt(wᵀ · Σ · w)
+#     s.t. sum(w) = 1
+#          0 <= w_i <= 1
+#
+# On minimise directement la volatilité du portefeuille,
+# sans contrainte sur le rendement.
+# La volatilité étant plus prévisible que les rendements,
+# le GMV est souvent plus robuste en pratique que le MSR.
 
 result_gmv = minimize(portfolio_volatility, w0,
                       method="SLSQP",
@@ -158,7 +160,7 @@ result_gmv = minimize(portfolio_volatility, w0,
 
 GMV_weights_opt = result_gmv.x
 GMV_ret_opt, GMV_vol_opt = portfolio_performance(GMV_weights_opt)
-GMV_sharpe_opt  = (GMV_ret_opt) / GMV_vol_opt
+GMV_sharpe_opt  = GMV_ret_opt / GMV_vol_opt
 
 print("\nGMV (Global Minimum Volatility)")
 for ticker, w in zip(TICKERS, GMV_weights_opt):
@@ -170,19 +172,17 @@ print(f"  Volatilité : {GMV_vol_opt:.4%} | Rendement : {GMV_ret_opt:.4%} | Shar
 
 # 4. Frontière efficiente — optimisation exacte
 
-'''
-Frontière efficiente par optimisation :
-Pour chaque niveau de rendement cible entre le GMV et le rendement max,
-on minimise la volatilité sous contrainte de rendement.
-
-    min  sqrt(wT · Sigma · w)
-    s.t. sum(w) = 1
-         0 <= w_i <= 1
-         R_p = target_return    (contrainte supplémentaire)
-
-On obtient ainsi la frontière efficiente exacte point par point,
-contrairement à Monte Carlo qui l'approxime par un nuage de points aléatoires.
-'''
+# Frontière efficiente par optimisation :
+# Pour chaque niveau de rendement cible entre le GMV et le rendement max,
+# on minimise la volatilité sous contrainte de rendement.
+#
+#     min  sqrt(wᵀ · Σ · w)
+#     s.t. sum(w) = 1
+#          0 <= w_i <= 1
+#          R_p = target_return    (contrainte supplémentaire)
+#
+# On obtient ainsi la frontière efficiente exacte point par point,
+# contrairement à Monte Carlo qui l'approxime par un nuage de points aléatoires.
 
 # Plage de rendements cibles entre GMV et rendement max
 target_returns = np.linspace(GMV_ret_opt, mean_returns_annual.max(), 100)
@@ -203,12 +203,12 @@ frontier_vols = np.array(frontier_vols)
 
 # Coordonnées des 3 portefeuilles custom
 port_vol_custom = np.sqrt(np.dot(portfolio_weights.T,    np.dot(cov_mat_annual, portfolio_weights)))
-port_vol_ew_    = np.sqrt(np.dot(portfolio_weights_ew.T, np.dot(cov_mat_annual, portfolio_weights_ew)))
-port_vol_mcap_  = np.sqrt(np.dot(mcap_weights.T,         np.dot(cov_mat_annual, mcap_weights)))
+port_vol_ew     = np.sqrt(np.dot(portfolio_weights_ew.T, np.dot(cov_mat_annual, portfolio_weights_ew)))
+port_vol_mcap   = np.sqrt(np.dot(mcap_weights.T,         np.dot(cov_mat_annual, mcap_weights)))
 
 port_ret_custom = np.dot(portfolio_weights,    mean_returns_annual)
-port_ret_ew_    = np.dot(portfolio_weights_ew, mean_returns_annual)
-port_ret_mcap_  = np.dot(mcap_weights,         mean_returns_annual)
+port_ret_ew     = np.dot(portfolio_weights_ew, mean_returns_annual)
+port_ret_mcap   = np.dot(mcap_weights,         mean_returns_annual)
 
 fig, ax = plt.subplots(figsize=(10, 7))
 
@@ -225,8 +225,8 @@ ax.scatter(GMV_vol_opt, GMV_ret_opt, color="blue", s=120, zorder=5,
 
 # Portefeuilles custom
 ax.scatter(port_vol_custom, port_ret_custom, color="steelblue",  s=100, zorder=5, label="Pondéré custom")
-ax.scatter(port_vol_ew_,    port_ret_ew_,    color="darkorange", s=100, zorder=5, label="Équipondéré")
-ax.scatter(port_vol_mcap_,  port_ret_mcap_,  color="seagreen",   s=100, zorder=5, label="Market-Cap")
+ax.scatter(port_vol_ew,     port_ret_ew,     color="darkorange", s=100, zorder=5, label="Équipondéré")
+ax.scatter(port_vol_mcap,   port_ret_mcap,   color="seagreen",   s=100, zorder=5, label="Market-Cap")
 
 ax.set_title("Frontière Efficiente de Markowitz avec scipy.optimize")
 ax.set_xlabel("Volatilité annualisée")
