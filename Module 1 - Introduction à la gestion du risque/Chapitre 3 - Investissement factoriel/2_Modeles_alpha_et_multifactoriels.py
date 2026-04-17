@@ -47,6 +47,8 @@ data = yf.download(TICKERS, start=START, end=END,
                    auto_adjust=False, progress=False)
 if isinstance(data.columns, pd.MultiIndex):
     adj_close = data["Adj Close"]
+else:
+    adj_close = data[["Adj Close"]]
 adj_close = adj_close.sort_index()
 
 # Rendements journaliers discrets

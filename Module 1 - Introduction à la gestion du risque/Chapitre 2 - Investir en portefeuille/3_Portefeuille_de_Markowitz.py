@@ -53,6 +53,8 @@ NUM_STOCKS = len(TICKERS)
 data = yf.download(TICKERS, start="2016-01-01", end="2026-12-31", auto_adjust=False, progress=False)
 if isinstance(data.columns, pd.MultiIndex):
     adj_close = data["Adj Close"]
+else:
+    adj_close = data[["Adj Close"]]
 adj_close = adj_close.sort_index()
 
 # Calcul des rendements discrets pour chaque actif

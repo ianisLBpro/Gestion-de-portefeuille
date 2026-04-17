@@ -49,6 +49,8 @@ data = yf.download(TICKERS + ["^GSPC"], start=START, end=END,
                    auto_adjust=False, progress=False)
 if isinstance(data.columns, pd.MultiIndex):
     adj_close = data["Adj Close"].sort_index()
+else:
+    adj_close = data[["Adj Close"]].sort_index()
 
 print(f"Actifs   : {TICKERS}")
 print(f"Période  : {START} → {END}")
